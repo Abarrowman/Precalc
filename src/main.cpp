@@ -42,6 +42,11 @@ bool constexpr peek_char() {
   }
 }
 
+template<typename T, typename A>
+struct type_and_ast {
+  using type = T;
+  using ast = A;
+};
 
 template<typename T, int i>
 struct type_and_int {
@@ -50,6 +55,34 @@ struct type_and_int {
     return i;
   }
 };
+
+
+template<typename T>
+struct type_holder {
+  using type = T;
+};
+
+template<int i>
+struct ast_int {
+  static int constexpr value() {
+    return i;
+  }
+};
+
+template<typename A, typename B>
+struct ast_sum {
+  static int constexpr value() {
+    return A::value() + B::value();
+  }
+};
+
+template<typename A, typename B>
+struct ast_product {
+  static int constexpr value() {
+    return A::value() * B::value();
+  }
+};
+
 
 template<typename T>
 auto constexpr pry_int() {
@@ -85,10 +118,11 @@ auto constexpr value() {
     static_assert(after::front() == ')');
 
     using beyond = typename after::tail; // consume )
-    return type_and_int<beyond, mid.value()>{};
+    return type_and_ast<beyond, typename decltype(mid)::ast>{};
   } else {
     static_assert(peek_int<T>());
-    return pry_int<T>();
+    auto constexpr result = pry_int<T>();
+    return type_and_ast<typename decltype(result)::type, ast_int<result.value()>>{};
   }
 }
 
@@ -101,7 +135,7 @@ auto constexpr factor_tail() {
     using next = typename T::tail; // consume *
     return factor<next>();
   } else {
-    return type_and_int<T, 1>{}; // identity element of multiplication
+    return type_and_ast<T, void>{};
   }
 }
 
@@ -113,8 +147,11 @@ auto constexpr factor() {
   auto constexpr right_value = factor_tail<next>();
   using after = typename decltype(right_value)::type;
 
-  int constexpr product = left_value.value() * right_value.value();
-  return type_and_int<after, product>{};
+  if constexpr (std::is_same_v<void, typename decltype(right_value)::ast>) {
+    return type_and_ast<after, typename decltype(left_value)::ast>{};
+  } else {
+    return type_and_ast<after, ast_product<typename decltype(left_value)::ast, typename decltype(right_value)::ast>>{};
+  }
 }
 
 template<typename T>
@@ -126,7 +163,7 @@ auto constexpr term_tail() {
     using next = typename T::tail; // consume +
     return term<next>();
   } else {
-    return type_and_int<T, 0>{}; // identity element of addition
+    return type_and_ast<T, void>{};
   }
 }
 
@@ -138,8 +175,11 @@ auto constexpr term() {
   auto constexpr right_value = term_tail<next>();
   using after = typename decltype(right_value)::type;
 
-  int constexpr sum = left_value.value() + right_value.value();
-  return type_and_int<after, sum>{};
+  if constexpr (std::is_same_v<void, typename decltype(right_value)::ast>) {
+    return type_and_ast<after, typename decltype(left_value)::ast>{};
+  } else {
+    return type_and_ast<after, ast_sum<typename decltype(left_value)::ast, typename decltype(right_value)::ast>>{};
+  }
 }
 
 
@@ -149,15 +189,21 @@ auto constexpr expr() {
 }
 
 template<typename T>
-int constexpr eval() {
+auto constexpr parse() {
   auto constexpr out = expr<T>();
   using after = typename decltype(out)::type;
   if constexpr (after::empty()) {
-    return out.value();
+    return type_holder<typename decltype(out)::ast>{};
   } else {
-    return 1000 + after::size();
-    //return -1;
+    // Basically assert false
+    static_assert(std::is_same_v<after, void>);
   }
+}
+
+template<typename T>
+int constexpr eval() {
+  auto constexpr out = parse<T>();
+  return decltype(out)::type::value();
 }
 
 template<char c, typename next>
@@ -223,10 +269,19 @@ struct string_holder {
 
 int main() {
   using chain = to_char_chain<string_holder>::type;
+  //std::cout << "The chain's type name is: " << typeid(chain).name() << "\n";
   //std::cout << "The chain has length: " << chain::size() << "\n";
   //std::cout << "The chain has value [" << chain::to_string() << "]\n";
   //std::cout << "The chain has front: " << chain::front() << "\n";
   //std::cout << "The chain has back: " << chain::back() << "\n";
-  constexpr int value = eval<chain>();
+
+  constexpr auto parsed = parse<chain>();
+  using ast = decltype(parsed)::type;
+  constexpr int value = ast::value();
+  //std::cout << "The ast type name is: " << typeid(ast).name() << "\n";
+
+
+  //constexpr int value = eval<chain>();
+
   std::cout << "The chain is evaluated to: " << value << "\n";
 }
