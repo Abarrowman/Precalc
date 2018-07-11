@@ -6,33 +6,22 @@
 using namespace std::literals;
 
 template<int a, int b>
-struct IntPower {
+struct int_power {
   static int constexpr value() {
     if constexpr (b == 0) {
       return 1;
     } else {
-      return a * IntPower<a, b - 1>::value();
+      return a * int_power<a, b - 1>::value();
     }
   }
 };
 
 template<typename T>
-int constexpr parse_int(T msg) {
-  if constexpr (msg().empty()) {
-    return 0;
-  } else {
-    return (msg().back() - 48) + 10 * parse_int([msg] {
-      return msg().substr(0, msg().size() - 1);
-    });
-  }
-}
-
-template<typename T>
-bool constexpr peek_int(T msg) {
-  if constexpr (msg().empty()) {
+bool constexpr peek_int() {
+  if constexpr (T::empty()) {
     return false;
   } else {
-    if constexpr ((msg().front() >= 48) && (msg().front() <= 57)) {
+    if constexpr ((T::front() >= 48) && (T::front() <= 57)) {
       return true;
     } else {
       return false;
@@ -41,11 +30,11 @@ bool constexpr peek_int(T msg) {
 }
 
 template<typename T, char c>
-bool constexpr peek_char(T msg) {
-  if constexpr (msg().empty()) {
+bool constexpr peek_char() {
+  if constexpr (T::empty()) {
     return false;
   } else {
-    if constexpr (msg().front() == c) {
+    if constexpr (T::front() == c) {
       return true;
     } else {
       return false;
@@ -53,104 +42,191 @@ bool constexpr peek_char(T msg) {
   }
 }
 
-template<typename T>
-auto constexpr skip_char(T msg) {
-  return [msg] { return msg().substr(1); };
-}
+
+template<typename T, int i>
+struct type_and_int {
+  using type = T;
+  static int constexpr value() {
+    return i;
+  }
+};
 
 template<typename T>
-auto constexpr pry_int(T msg) {
-  if constexpr (msg().empty()) {
-    return std::make_tuple(msg, 0);
+auto constexpr pry_int() {
+  if constexpr (T::empty()) {
+    return type_and_int<T, 0>{};
   } else {
-    if constexpr (peek_int(msg)) {
-      auto constexpr rem = pry_int([msg] { return msg().substr(1); });
-      int constexpr places = msg().size() - std::get<0>(rem)().size() - 1;
-      int constexpr front = (msg().front() - 48);
-      int constexpr mult = IntPower<10, places>::value();
-      int constexpr result = front * mult + std::get<1>(rem);
-      return std::make_tuple(std::get<0>(rem), result);
+    if constexpr (peek_int<T>()) {
+      auto constexpr rem = pry_int<typename T::tail>();
+      int constexpr places = T::size() - decltype(rem)::type::size() - 1;
+      int constexpr front = (T::front() - 48);
+      int constexpr mult = int_power<10, places>::value();
+      int constexpr result = front * mult + rem.value();
+      return type_and_int<typename decltype(rem)::type, result>{};
     } else {
-      return std::make_tuple(msg, 0);
+      return type_and_int<T, 0>{};
     }
   }
 }
 
 template<typename T>
-auto constexpr expr(T msg);
+auto constexpr expr();
 
 template<typename T>
-auto constexpr value(T msg) {
-  if constexpr (peek_char<T, '('>(msg)) {
-    auto constexpr next = skip_char(msg);
+auto constexpr value() {
+  if constexpr (peek_char<T, '('>()) {
+    using next = typename T::tail; // consume (
 
-    auto constexpr mid = expr(next);
+    auto constexpr mid = expr<next>();
 
-    auto constexpr after = std::get<0>(mid);
-    static_assert(peek_char<decltype(after), ')'>(after));
-    auto constexpr beyond = skip_char(after);
+    using after = typename decltype(mid)::type;
 
-    return std::make_tuple(beyond, std::get<1>(mid));
+    //static_assert(peek_char<after, ')'>());
+    static_assert(after::front() == ')');
+
+    using beyond = typename after::tail; // consume )
+    return type_and_int<beyond, mid.value()>{};
   } else {
-    static_assert(peek_int(msg));
-    return pry_int(msg);
+    static_assert(peek_int<T>());
+    return pry_int<T>();
   }
 }
 
 template<typename T>
-auto constexpr factor_tail(T msg) {
-  if constexpr (peek_char<T, '*'>(msg)) {
-    auto constexpr next = skip_char(msg);
-    return factor(next);
+auto constexpr factor();
+
+template<typename T>
+auto constexpr factor_tail() {
+  if constexpr (peek_char<T, '*'>()) {
+    using next = typename T::tail; // consume *
+    return factor<next>();
   } else {
-    return std::make_tuple(msg, 1);
+    return type_and_int<T, 1>{}; // identity element of multiplication
   }
 }
 
 template<typename T>
-auto constexpr factor(T msg) {
-  auto constexpr leftTup = value(msg);
-  auto constexpr rightTup = factor_tail(std::get<0>(leftTup));
-  int constexpr product = std::get<1>(leftTup) * std::get<1>(rightTup);
-  return std::make_tuple(std::get<0>(rightTup), product);
+auto constexpr factor() {
+  auto constexpr left_value = value<T>();
+  using next = typename decltype(left_value)::type;
+
+  auto constexpr right_value = factor_tail<next>();
+  using after = typename decltype(right_value)::type;
+
+  int constexpr product = left_value.value() * right_value.value();
+  return type_and_int<after, product>{};
 }
 
 template<typename T>
-auto constexpr term_tail(T msg) {
-  if constexpr (peek_char<T, '+'>(msg)) {
-    auto constexpr next = skip_char(msg);
-    return term(next);
+auto constexpr term();
+
+template<typename T>
+auto constexpr term_tail() {
+  if constexpr (peek_char<T, '+'>()) {
+    using next = typename T::tail; // consume +
+    return term<next>();
   } else {
-    return std::make_tuple(msg, 0);
+    return type_and_int<T, 0>{}; // identity element of addition
   }
 }
 
 template<typename T>
-auto constexpr term(T msg) {
-  auto constexpr leftTup = factor(msg);
-  auto constexpr rightTup = term_tail(std::get<0>(leftTup));
-  int constexpr sum = std::get<1>(leftTup) + std::get<1>(rightTup);
-  return std::make_tuple(std::get<0>(rightTup), sum);
+auto constexpr term() {
+  auto constexpr left_value = factor<T>();
+  using next = typename decltype(left_value)::type;
+
+  auto constexpr right_value = term_tail<next>();
+  using after = typename decltype(right_value)::type;
+
+  int constexpr sum = left_value.value() + right_value.value();
+  return type_and_int<after, sum>{};
 }
 
 
 template<typename T>
-auto constexpr expr(T msg) {
-  return term(msg);
+auto constexpr expr() {
+  return term<T>();
 }
 
 template<typename T>
-int constexpr eval(T msg) {
-  auto constexpr out = expr(msg);
-  if constexpr (std::get<0>(out)().empty()) {
-    return std::get<1>(out);
+int constexpr eval() {
+  auto constexpr out = expr<T>();
+  using after = typename decltype(out)::type;
+  if constexpr (after::empty()) {
+    return out.value();
   } else {
-    return -1;
+    return 1000 + after::size();
+    //return -1;
   }
 }
+
+template<char c, typename next>
+struct char_chain {
+  using tail = next;
+  static size_t constexpr size() {
+    return 1 + tail::size();
+  }
+  static char constexpr front() {
+    return c;
+  }
+  static char constexpr back() {
+    if constexpr (tail::empty()) {
+      return c;
+    } else {
+      return tail::back();
+    }
+  }
+  static std::string to_string() {
+    return std::string(1, c) + tail::to_string();
+  }
+  static bool constexpr empty() {
+    return false;
+  }
+};
+
+struct char_chain_terminator {
+  static size_t constexpr size() {
+    return 0;
+  }
+  static std::string to_string() {
+    return {};
+  }
+  static bool constexpr empty() {
+    return true;
+  }
+};
+
+template<typename G, size_t idx>
+struct chainer {
+  using type = char_chain<G::value()[G::value().size() - idx], typename chainer<G, idx - 1>::type>;
+};
+
+template<typename G>
+struct chainer<G, 0> {
+  using type = char_chain_terminator;
+};
+
+template<typename G>
+struct to_char_chain {
+  using type = typename chainer<G, G::value().size()>::type;
+};
+
+
+
+struct string_holder {
+  static std::string_view constexpr value() {
+    return "(2+2+3*3+(4*9+3)+3*(2+2))*4+256"sv;
+    //return "21+42"sv;
+    //return "2*3"sv;
+  }
+};
 
 int main() {
-  int constexpr evaled = eval([]() { return "(2+2+3*3+(4*9+3)+3*(2+2))*4+256"sv; });
-  //int constexpr evaled = eval([] { return "2+2"sv; });
-  std::cout << "Evaled: " << evaled << "\n";
+  using chain = to_char_chain<string_holder>::type;
+  //std::cout << "The chain has length: " << chain::size() << "\n";
+  //std::cout << "The chain has value [" << chain::to_string() << "]\n";
+  //std::cout << "The chain has front: " << chain::front() << "\n";
+  //std::cout << "The chain has back: " << chain::back() << "\n";
+  constexpr int value = eval<chain>();
+  std::cout << "The chain is evaluated to: " << value << "\n";
 }
