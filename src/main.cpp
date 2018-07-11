@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string_view>
 #include <tuple>
+#include<string>
 
 using namespace std::literals;
 
@@ -17,7 +18,7 @@ struct IntPower {
 
 template<typename T>
 int constexpr parse_int(T msg) {
-  if constexpr (msg().size() == 0) {
+  if constexpr (msg().empty()) {
     return 0;
   } else {
     return (msg().back() - 48) + 10 * parse_int([msg] {
@@ -28,7 +29,7 @@ int constexpr parse_int(T msg) {
 
 template<typename T>
 bool constexpr peek_int(T msg) {
-  if constexpr (msg().size() == 0) {
+  if constexpr (msg().empty()) {
     return false;
   } else {
     if constexpr ((msg().front() >= 48) && (msg().front() <= 57)) {
@@ -41,7 +42,7 @@ bool constexpr peek_int(T msg) {
 
 template<typename T, char c>
 bool constexpr peek_char(T msg) {
-  if constexpr (msg().size() == 0) {
+  if constexpr (msg().empty()) {
     return false;
   } else {
     if constexpr (msg().front() == c) {
@@ -59,7 +60,7 @@ auto constexpr skip_char(T msg) {
 
 template<typename T>
 auto constexpr pry_int(T msg) {
-  if constexpr (msg().size() == 0) {
+  if constexpr (msg().empty()) {
     return std::make_tuple(msg, 0);
   } else {
     if constexpr (peek_int(msg)) {
@@ -76,16 +77,19 @@ auto constexpr pry_int(T msg) {
 }
 
 template<typename T>
+auto constexpr expr(T msg);
+
+template<typename T>
 auto constexpr value(T msg) {
   if constexpr (peek_char<T, '('>(msg)) {
     auto constexpr next = skip_char(msg);
-    
+
     auto constexpr mid = expr(next);
-    
+
     auto constexpr after = std::get<0>(mid);
     static_assert(peek_char<decltype(after), ')'>(after));
     auto constexpr beyond = skip_char(after);
-    
+
     return std::make_tuple(beyond, std::get<1>(mid));
   } else {
     static_assert(peek_int(msg));
@@ -138,7 +142,7 @@ auto constexpr expr(T msg) {
 template<typename T>
 int constexpr eval(T msg) {
   auto constexpr out = expr(msg);
-  if constexpr (std::get<0>(out)().size() == 0) {
+  if constexpr (std::get<0>(out)().empty()) {
     return std::get<1>(out);
   } else {
     return -1;
@@ -146,7 +150,7 @@ int constexpr eval(T msg) {
 }
 
 int main() {
-  auto constexpr evaled = eval([] { return "(2+2+3*3+(4*9+3)+3*(2+2))*4+256"sv; });
+  int constexpr evaled = eval([]() { return "(2+2+3*3+(4*9+3)+3*(2+2))*4+256"sv; });
+  //int constexpr evaled = eval([] { return "2+2"sv; });
   std::cout << "Evaled: " << evaled << "\n";
-
 }
