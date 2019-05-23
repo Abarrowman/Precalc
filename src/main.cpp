@@ -54,14 +54,14 @@ bool constexpr peek_char() {
 }
 
 template<typename T, typename A>
-struct type_and_ast {
-  using type = T;
+struct chain_and_ast {
+  using chain = T;
   using ast = A;
 };
 
 template<typename T, int i>
-struct type_and_int {
-  using type = T;
+struct chain_and_int {
+  using chain = T;
   static int constexpr value() {
     return i;
   }
@@ -69,8 +69,13 @@ struct type_and_int {
 
 
 template<typename T>
-struct type_holder {
-  using type = T;
+struct ast_holder {
+  using ast = T;
+};
+
+template<typename T>
+struct chain_holder {
+  using chain = T;
 };
 
 template<int i>
@@ -105,17 +110,17 @@ struct ast_product {
 template<typename T>
 auto constexpr pry_uint() {
   if constexpr (T::empty()) {
-    return type_and_int<T, 0>{};
+    return chain_and_int<T, 0>{};
   } else {
     if constexpr (peek_uint<T>()) {
       auto constexpr rem = pry_uint<typename T::tail>();
-      int constexpr places = T::size() - decltype(rem)::type::size() - 1;
+      int constexpr places = T::size() - decltype(rem)::chain::size() - 1;
       int constexpr front = (T::front() - 48);
       int constexpr mult = int_power<10, places>::value();
       int constexpr result = front * mult + rem.value();
-      return type_and_int<typename decltype(rem)::type, result>{};
+      return chain_and_int<typename decltype(rem)::chain, result>{};
     } else {
-      return type_and_int<T, 0>{};
+      return chain_and_int<T, 0>{};
     }
   }
 }
@@ -123,11 +128,11 @@ auto constexpr pry_uint() {
 template<typename T>
 auto constexpr pry_int() {
   if constexpr (T::empty()) {
-    return type_and_int<T, 0>{};
+    return chain_and_int<T, 0>{};
   } else {
     if constexpr (T::front() == '-') {
       auto constexpr rem = pry_uint<typename T::tail>();
-      return type_and_int<typename decltype(rem)::type, -rem.value()>{};
+      return chain_and_int<typename decltype(rem)::chain, -rem.value()>{};
     } else {
       return pry_uint<T>();
     }
@@ -144,17 +149,17 @@ auto constexpr value() {
 
     auto constexpr mid = expr<next>();
 
-    using after = typename decltype(mid)::type;
+    using after = typename decltype(mid)::chain;
 
     //static_assert(peek_char<after, ')'>());
     static_assert(after::front() == ')');
 
     using beyond = typename after::tail; // consume )
-    return type_and_ast<beyond, typename decltype(mid)::ast>{};
+    return chain_and_ast<beyond, typename decltype(mid)::ast>{};
   } else {
     static_assert(peek_int<T>());
     auto constexpr result = pry_int<T>();
-    return type_and_ast<typename decltype(result)::type, ast_int<result.value()>>{};
+    return chain_and_ast<typename decltype(result)::chain, ast_int<result.value()>>{};
   }
 }
 
@@ -167,22 +172,22 @@ auto constexpr multterm_tail() {
     using next = typename T::tail; // consume *
     return multterm<next>();
   } else {
-    return type_and_ast<T, void>{};
+    return chain_and_ast<T, void>{};
   }
 }
 
 template<typename T>
 auto constexpr multterm() {
   auto constexpr left_value = value<T>();
-  using next = typename decltype(left_value)::type;
+  using next = typename decltype(left_value)::chain;
 
   auto constexpr right_value = multterm_tail<next>();
-  using after = typename decltype(right_value)::type;
+  using after = typename decltype(right_value)::chain;
 
   if constexpr (std::is_same_v<void, typename decltype(right_value)::ast>) {
-    return type_and_ast<after, typename decltype(left_value)::ast>{};
+    return chain_and_ast<after, typename decltype(left_value)::ast>{};
   } else {
-    return type_and_ast<after, ast_product<typename decltype(left_value)::ast, typename decltype(right_value)::ast>>{};
+    return chain_and_ast<after, ast_product<typename decltype(left_value)::ast, typename decltype(right_value)::ast>>{};
   }
 }
 
@@ -191,14 +196,14 @@ auto constexpr subterm_tail() {
   if constexpr (peek_char<T, '-'>()) {
     using next = typename T::tail; // consume -
     auto constexpr right_value = multterm<next>();
-    using next2 = typename decltype(right_value)::type;
+    using next2 = typename decltype(right_value)::chain;
 
     using value = ast_sub<A, typename decltype(right_value)::ast>;
 
     return subterm_tail<next2, value>();
 
   } else {
-    return type_and_ast<T, A>{};
+    return chain_and_ast<T, A>{};
 
   }
 }
@@ -206,7 +211,7 @@ auto constexpr subterm_tail() {
 template<typename T>
 auto constexpr subterm() {
   auto constexpr left_value = multterm<T>();
-  using next = typename decltype(left_value)::type;
+  using next = typename decltype(left_value)::chain;
 
   return subterm_tail<next, typename decltype(left_value)::ast>();
 }
@@ -221,22 +226,22 @@ auto constexpr addterm_tail() {
     using next = typename T::tail; // consume +
     return addterm<next>();
   } else {
-    return type_and_ast<T, void>{};
+    return chain_and_ast<T, void>{};
   }
 }
 
 template<typename T>
 auto constexpr addterm() {
   auto constexpr left_value = subterm<T>();
-  using next = typename decltype(left_value)::type;
+  using next = typename decltype(left_value)::chain;
 
   auto constexpr right_value = addterm_tail<next>();
-  using after = typename decltype(right_value)::type;
+  using after = typename decltype(right_value)::chain;
 
   if constexpr (std::is_same_v<void, typename decltype(right_value)::ast>) {
-    return type_and_ast<after, typename decltype(left_value)::ast>{};
+    return chain_and_ast<after, typename decltype(left_value)::ast>{};
   } else {
-    return type_and_ast<after, ast_sum<typename decltype(left_value)::ast, typename decltype(right_value)::ast>>{};
+    return chain_and_ast<after, ast_sum<typename decltype(left_value)::ast, typename decltype(right_value)::ast>>{};
   }
 }
 
@@ -249,9 +254,9 @@ auto constexpr expr() {
 template<typename T>
 auto constexpr parse() {
   auto constexpr out = expr<T>();
-  using after = typename decltype(out)::type;
+  using after = typename decltype(out)::chain;
   if constexpr (after::empty()) {
-    return type_holder<typename decltype(out)::ast>{};
+    return ast_holder<typename decltype(out)::ast>{};
   } else {
     // Basically assert false
     static_assert(std::is_same_v<after, void>);
@@ -288,12 +293,12 @@ struct char_chain {
   }
 
   static auto constexpr reverse() {
-    return tail::inner_reverse(type_holder<char_chain<c, char_chain_terminator>>{});
+    return tail::inner_reverse(chain_holder<char_chain<c, char_chain_terminator>>{});
   }
 
   template <typename T>
-  static auto constexpr inner_reverse(type_holder<T> before) {
-    return tail::inner_reverse(type_holder<char_chain<c, T>>{});
+  static auto constexpr inner_reverse(chain_holder<T> before) {
+    return tail::inner_reverse(chain_holder<char_chain<c, T>>{});
   }
 
 
@@ -311,32 +316,30 @@ struct char_chain_terminator {
   }
 
   template <typename T>
-  static type_holder<T> constexpr inner_reverse(type_holder<T> before) {
-    return type_holder<T>{};
+  static chain_holder<T> constexpr inner_reverse(chain_holder<T> before) {
+    return chain_holder<T>{};
   }
   
-  static type_holder<char_chain_terminator> constexpr reverse() {
-    return type_holder<char_chain_terminator>{};
+  static chain_holder<char_chain_terminator> constexpr reverse() {
+    return chain_holder<char_chain_terminator>{};
   }
 
 };
 
 template<typename G, size_t idx>
 struct chainer {
-  using type = char_chain<G::value()[G::value().size() - idx], typename chainer<G, idx - 1>::type>;
+  using next = char_chain<G::value()[G::value().size() - idx], typename chainer<G, idx - 1>::next>;
 };
 
 template<typename G>
 struct chainer<G, 0> {
-  using type = char_chain_terminator;
+  using next = char_chain_terminator;
 };
 
 template<typename G>
 struct to_char_chain {
-  using type = typename chainer<G, G::value().size()>::type;
+  using chain = typename chainer<G, G::value().size()>::next;
 };
-
-
 
 struct expression_holder {
   static std::string_view constexpr value() {
@@ -352,23 +355,27 @@ struct expression_holder {
 
 
 int main() {
-  using chain = to_char_chain<expression_holder>::type;
-  //std::cout << "The chain's type name is: " << typeid(chain).name() << "\n";
-  //std::cout << "The chain has length: " << chain::size() << "\n";
-  //std::cout << "The chain has value [" << chain::to_string() << "]\n";
+  using chain = to_char_chain<expression_holder>::chain;
 
-  //using reversed = typename decltype(chain::reverse())::type;
-  //std::cout << "The chain's reversed type name is: " << typeid(reversed).name() << "\n";
-  //std::cout << "The chain's reveresed value [" << reversed::to_string() << "]\n";
+  /*
+  std::cout << "The chain's type name is: " << typeid(chain).name() << "\n";
+  std::cout << "The chain has length: " << chain::size() << "\n";
+  std::cout << "The chain has value [" << chain::to_string() << "]\n";
+
+  using reversed = typename decltype(chain::reverse())::chain;
+  std::cout << "The chain's reversed type name is: " << typeid(reversed).name() << "\n";
+  std::cout << "The chain's reveresed value [" << reversed::to_string() << "]\n";
   
-  //std::cout << "The chain has front: " << chain::front() << "\n";
-  //std::cout << "The chain has back: " << chain::back() << "\n";
+  std::cout << "The chain has front: " << chain::front() << "\n";
+  std::cout << "The chain has back: " << chain::back() << "\n";*/
 
-  using ast = typename decltype(parse<chain>())::type;
+  using ast = typename decltype(parse<chain>())::ast;
   constexpr int value = ast::value();
 
+  /*
+  std::cout << "The ast type name is: " << typeid(ast).name() << "\n";
+  */
 
-  //std::cout << "The ast type name is: " << typeid(ast).name() << "\n";
   std::cout << "The chain is evaluated to: " << value << "\n";
 
   return 0;
