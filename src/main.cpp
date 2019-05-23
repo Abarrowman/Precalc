@@ -87,12 +87,24 @@ struct ast_int {
   static int constexpr value() {
     return i;
   }
+
+  template<char c, int j>
+  static auto constexpr substitute() {
+    return ast_holder<ast_int<i>>{};
+  }
 };
 
 template<typename A, typename B>
 struct ast_sum {
   static int constexpr value() {
     return A::value() + B::value();
+  }
+
+  template<char c, int i>
+  static auto constexpr substitute() {
+    auto constexpr a_sub = A::substitute<c, i>();
+    auto constexpr b_sub = B::substitute<c, i>();
+    return ast_holder<ast_sum<GET_TDEF(a_sub, ast), GET_TDEF(b_sub, ast)>>{};
   }
 };
 
@@ -101,6 +113,13 @@ struct ast_sub {
   static int constexpr value() {
     return A::value() - B::value();
   }
+
+  template<char c, int i>
+  static auto constexpr substitute() {
+    auto constexpr a_sub = A::substitute<c, i>();
+    auto constexpr b_sub = B::substitute<c, i>();
+    return ast_holder<ast_sub<GET_TDEF(a_sub, ast), GET_TDEF(b_sub, ast)>>{};
+  }
 };
 
 template<typename A, typename B>
@@ -108,12 +127,38 @@ struct ast_div {
   static int constexpr value() {
     return A::value() / B::value();
   }
+
+  template<char c, int i>
+  static auto constexpr substitute() {
+    auto constexpr a_sub = A::substitute<c, i>();
+    auto constexpr b_sub = B::substitute<c, i>();
+    return ast_holder<ast_div<GET_TDEF(a_sub, ast), GET_TDEF(b_sub, ast)>>{};
+  }
 };
 
 template<typename A, typename B>
 struct ast_product {
   static int constexpr value() {
     return A::value() * B::value();
+  }
+
+  template<char c, int i>
+  static auto constexpr substitute() {
+    auto constexpr a_sub = A::substitute<c, i>();
+    auto constexpr b_sub = B::substitute<c, i>();
+    return ast_holder<ast_product<GET_TDEF(a_sub, ast), GET_TDEF(b_sub, ast)>>{};
+  }
+};
+
+template<char v>
+struct ast_letter_var {
+  template<char c, int i>
+  static auto constexpr substitute() {
+    if constexpr (v == c) {
+      return ast_holder<ast_int<i>>{};
+    } else {
+      return ast_holder<ast_letter_var<v>>{};
+    }
   }
 };
 
@@ -410,13 +455,22 @@ int main() {
 
 
   using ast = GET_TDEF(parse<chain>(), ast);
-  constexpr int value = ast::value();
+  auto constexpr sub_ast_holder = ast::substitute<'x', 9>();
+  using ast_sub = GET_TDEF(sub_ast_holder, ast);
+  constexpr int value = ast_sub::value();
 
   /*
   std::cout << "The ast type name is: " << typeid(ast).name() << "\n";
   */
 
   std::cout << "The chain is evaluated to: " << value << "\n";
+
+
+  using other_ast = ast_sum<ast_int<4>, ast_letter_var<'x'>>;
+  auto constexpr sub_other_ast_holder = other_ast::substitute<'x', 3>();
+  using sub_other_ast = GET_TDEF(sub_other_ast_holder, ast);
+  constexpr int other_value = sub_other_ast::value();
+  std::cout << "The other substituted ast is evaluated to: " << other_value << "\n";
 
 
   return 0;
