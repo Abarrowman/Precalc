@@ -41,7 +41,7 @@ bool constexpr peek_uint() {
 }
 
 template<typename T>
-bool constexpr peek_letter_var() {
+bool constexpr peek_var() {
   if constexpr (T::empty()) {
     return false;
   } else {
@@ -101,6 +101,11 @@ struct chain_and_char {
   }
 };
 
+template<typename C, typename V>
+struct chain_and_var {
+  using chain = C;
+  using var = V;
+};
 
 template<typename T>
 struct ast_holder {
@@ -112,13 +117,67 @@ struct chain_holder {
   using chain = T;
 };
 
+struct char_chain_terminator {
+  static size_t constexpr size() {
+    return 0;
+  }
+  static std::string to_string() {
+    return {};
+  }
+  static bool constexpr empty() {
+    return true;
+  }
+
+  template <typename T>
+  static chain_holder<T> constexpr inner_reverse(chain_holder<T> before) {
+    return chain_holder<T>{};
+  }
+
+  static chain_holder<char_chain_terminator> constexpr reverse() {
+    return chain_holder<char_chain_terminator>{};
+  }
+};
+
+template<char c, typename next>
+struct char_chain {
+  using tail = next;
+  static size_t constexpr size() {
+    return 1 + tail::size();
+  }
+  static char constexpr front() {
+    return c;
+  }
+  static char constexpr back() {
+    if constexpr (tail::empty()) {
+      return c;
+    } else {
+      return tail::back();
+    }
+  }
+  static std::string to_string() {
+    return std::string(1, c) + tail::to_string();
+  }
+  static bool constexpr empty() {
+    return false;
+  }
+
+  static auto constexpr reverse() {
+    return tail::inner_reverse(chain_holder<char_chain<c, char_chain_terminator>>{});
+  }
+
+  template <typename T>
+  static auto constexpr inner_reverse(chain_holder<T> before) {
+    return tail::inner_reverse(chain_holder<char_chain<c, T>>{});
+  }
+};
+
 template<int i>
 struct ast_int {
   static int constexpr value() {
     return i;
   }
 
-  template<char c, int j>
+  template<typename C, int j>
   static auto constexpr substitute() {
     return ast_holder<ast_int<i>>{};
   }
@@ -130,10 +189,10 @@ struct ast_sum {
     return A::value() + B::value();
   }
 
-  template<char c, int i>
+  template<typename C, int i>
   static auto constexpr substitute() {
-    auto constexpr a_sub = A::template substitute<c, i>();
-    auto constexpr b_sub = B::template substitute<c, i>();
+    auto constexpr a_sub = A::template substitute<C, i>();
+    auto constexpr b_sub = B::template substitute<C, i>();
     return ast_holder<ast_sum<GET_TDEF(a_sub, ast), GET_TDEF(b_sub, ast)>>{};
   }
 };
@@ -144,10 +203,10 @@ struct ast_sub {
     return A::value() - B::value();
   }
 
-  template<char c, int i>
+  template<typename C, int i>
   static auto constexpr substitute() {
-    auto constexpr a_sub = A::template substitute<c, i>();
-    auto constexpr b_sub = B::template substitute<c, i>();
+    auto constexpr a_sub = A::template substitute<C, i>();
+    auto constexpr b_sub = B::template substitute<C, i>();
     return ast_holder<ast_sub<GET_TDEF(a_sub, ast), GET_TDEF(b_sub, ast)>>{};
   }
 };
@@ -158,10 +217,10 @@ struct ast_div {
     return A::value() / B::value();
   }
 
-  template<char c, int i>
+  template<typename C, int i>
   static auto constexpr substitute() {
-    auto constexpr a_sub = A::template substitute<c, i>();
-    auto constexpr b_sub = B::template substitute<c, i>();
+    auto constexpr a_sub = A::template substitute<C, i>();
+    auto constexpr b_sub = B::template substitute<C, i>();
     return ast_holder<ast_div<GET_TDEF(a_sub, ast), GET_TDEF(b_sub, ast)>>{};
   }
 };
@@ -172,22 +231,24 @@ struct ast_product {
     return A::value() * B::value();
   }
 
-  template<char c, int i>
+  template<typename C, int i>
   static auto constexpr substitute() {
-    auto constexpr a_sub = A::template substitute<c, i>();
-    auto constexpr b_sub = B::template substitute<c, i>();
+    auto constexpr a_sub = A::template substitute<C, i>();
+    auto constexpr b_sub = B::template substitute<C, i>();
     return ast_holder<ast_product<GET_TDEF(a_sub, ast), GET_TDEF(b_sub, ast)>>{};
   }
 };
 
-template<char v>
-struct ast_letter_var {
-  template<char c, int i>
+template<typename V>
+struct ast_var {
+  using chain = V;
+
+  template<typename C, int i>
   static auto constexpr substitute() {
-    if constexpr (v == c) {
+    if constexpr (std::is_same_v<V, C>) {
       return ast_holder<ast_int<i>>{};
     } else {
-      return ast_holder<ast_letter_var<v>>{};
+      return ast_holder<ast_var<V>>{};
     }
   }
 };
@@ -225,14 +286,15 @@ auto constexpr pry_int() {
 }
 
 template<typename T>
-auto constexpr pry_letter_var() {
+auto constexpr pry_var() {
   if constexpr (T::empty()) {
-    static_asserter<false>{};
+    return chain_and_var<T, char_chain_terminator>{};
   } else {
-    if constexpr (peek_letter_var<T>()) {
-      return chain_and_char<typename T::tail, T::front()>{};
+    if constexpr (peek_var<T>()) {
+      auto constexpr rem = pry_var<typename T::tail>();
+      return chain_and_var<GET_TDEF(rem, chain), char_chain<T::front(), GET_TDEF(rem, var)>>{};
     } else {
-      static_asserter<false>{};
+      return chain_and_var<T, char_chain_terminator>{};
     }
   }
 }
@@ -259,9 +321,9 @@ auto constexpr value() {
       auto constexpr result = pry_int<T>();
       return chain_and_ast<GET_TDEF(result, chain), ast_int<result.value()>>{};
     } else {
-      static_assert(peek_letter_var<T>());
-      auto constexpr result = pry_letter_var<T>();
-      return chain_and_ast<GET_TDEF(result, chain), ast_letter_var<result.value()>>{};
+      static_assert(peek_var<T>());
+      auto constexpr result = pry_var<T>();
+      return chain_and_ast<GET_TDEF(result, chain), ast_var<GET_TDEF(result, var)>>{};
     }
   }
 }
@@ -398,62 +460,6 @@ int constexpr eval() {
   return decltype(out)::type::value();
 }
 
-struct char_chain_terminator {
-  static size_t constexpr size() {
-    return 0;
-  }
-  static std::string to_string() {
-    return {};
-  }
-  static bool constexpr empty() {
-    return true;
-  }
-
-  template <typename T>
-  static chain_holder<T> constexpr inner_reverse(chain_holder<T> before) {
-    return chain_holder<T>{};
-  }
-
-  static chain_holder<char_chain_terminator> constexpr reverse() {
-    return chain_holder<char_chain_terminator>{};
-  }
-};
-
-template<char c, typename next>
-struct char_chain {
-  using tail = next;
-  static size_t constexpr size() {
-    return 1 + tail::size();
-  }
-  static char constexpr front() {
-    return c;
-  }
-  static char constexpr back() {
-    if constexpr (tail::empty()) {
-      return c;
-    } else {
-      return tail::back();
-    }
-  }
-  static std::string to_string() {
-    return std::string(1, c) + tail::to_string();
-  }
-  static bool constexpr empty() {
-    return false;
-  }
-
-  static auto constexpr reverse() {
-    return tail::inner_reverse(chain_holder<char_chain<c, char_chain_terminator>>{});
-  }
-
-  template <typename T>
-  static auto constexpr inner_reverse(chain_holder<T> before) {
-    return tail::inner_reverse(chain_holder<char_chain<c, T>>{});
-  }
-
-
-};
-
 template<typename G, size_t idx>
 struct chainer {
   using next = char_chain<G::value()[G::value().size() - idx], typename chainer<G, idx - 1>::next>;
@@ -472,7 +478,8 @@ struct to_char_chain {
 struct expression_holder {
   static std::string_view constexpr value() {
     using namespace std::literals;
-    return "-2*(2048/4-((8/2/2+2+3*3+(4*x+3-1-1+2)+3*(2--2))*4+256)-512)"sv; //1024
+    return "-2*(2048/4-((8/2/2+2+3*3+(4*x+3-1-1+2)+3*(2--2))*favorite+256)-512)"sv; //1024
+    //return "-2*(2048/4-((8/2/2+2+3*3+(4*x+3-1-1+2)+3*(2--2))*4+256)-512)"sv; //1024
     //return "-2*(2048/4-((8/2/2+2+3*3+(4*9+3-1-1+2)+3*(2--2))*4+256)-512)"sv; //1024
     //return "8/(2/2)"sv; //8
     //return "8/2/2"sv; //2
@@ -484,10 +491,25 @@ struct expression_holder {
   }
 };
 
+struct x_holder {
+  static std::string_view constexpr value() {
+    using namespace std::literals;
+    return "x"sv;
+  }
+};
+
+struct favorite_holder {
+  static std::string_view constexpr value() {
+    using namespace std::literals;
+    return "favorite"sv;
+  }
+};
+
 int main() {
   using chain = to_char_chain<expression_holder>::chain;
+  using x = to_char_chain<x_holder>::chain;
+  using favorite = to_char_chain<favorite_holder>::chain;
 
-  
   /*std::cout << "The chain's type name is: " << typeid(chain).name() << "\n";
   std::cout << "The chain has length: " << chain::size() << "\n";
   std::cout << "The chain has value [" << chain::to_string() << "]\n";
@@ -500,9 +522,11 @@ int main() {
   std::cout << "The chain has back: " << chain::back() << "\n";*/
 
   using ast = GET_TDEF(parse<chain>(), ast);
-  auto constexpr sub_ast_holder = ast::substitute<'x', 9>();
+  auto constexpr sub_ast_holder = ast::substitute<x, 9>();
   using ast_sub = GET_TDEF(sub_ast_holder, ast);
-  constexpr int value = ast_sub::value();
+  auto constexpr sub_ast_holder2 = ast_sub::substitute<favorite, 4>();
+  using ast_sub2 = GET_TDEF(sub_ast_holder2, ast);
+  constexpr int value = ast_sub2::value();
 
   /*
   std::cout << "The ast type name is: " << typeid(ast).name() << "\n";
@@ -510,8 +534,8 @@ int main() {
 
   std::cout << "The chain is evaluated to: " << value << "\n";
 
-  using other_ast = ast_sum<ast_int<4>, ast_letter_var<'x'>>;
-  auto constexpr sub_other_ast_holder = other_ast::substitute<'x', 3>();
+  using other_ast = ast_sum<ast_int<4>, ast_var<x>>;
+  auto constexpr sub_other_ast_holder = other_ast::substitute<x, 3>();
   using sub_other_ast = GET_TDEF(sub_other_ast_holder, ast);
   constexpr int other_value = sub_other_ast::value();
   std::cout << "The other substituted ast is evaluated to: " << other_value << "\n";
